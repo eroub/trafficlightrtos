@@ -146,15 +146,11 @@ functionality.
 #include "../FreeRTOS_Source/include/task.h"
 #include "../FreeRTOS_Source/include/timers.h"
 
-
-
 /*-----------------------------------------------------------*/
 #define mainQUEUE_LENGTH 100
 
-#define amber  	0
-#define green  	1
-#define red  	2
 
+// Global definitions for pins
 #define INPUT_PORT GPIOC
 #define traffic_light_red GPIO_Pin_0
 #define traffic_light_yellow GPIO_Pin_1
@@ -163,16 +159,20 @@ functionality.
 #define shift_clock GPIO_Pin_7
 #define shift_data GPIO_Pin_6
 
-/*
- * The queue send and receive tasks as described in the comments at the top of
- * this file.
- */
+// Prototype functions
 static void Manager_Task( void *pvParameters );
 static void Green_LED_Controller_Task( void *pvParameters );
 static void Red_LED_Controller_Task( void *pvParameters );
 static void Amber_LED_Controller_Task( void *pvParameters );
 
-xQueueHandle xQueue_handle = 0;
+// Global variables for queues and timer
+TimerHandle_t trafficTimer;
+xQueueHandle flowQueue = 0;
+xQueueHandle nextCarQueue = 0;
+xQueueHandle lightsQueue = 0;
+
+// Base flow to send if no potentiometer reading
+#define BASE_FLOW 0
 
 void hardwareInit() {
 
@@ -234,6 +234,11 @@ void hardwareInit() {
 	ADC_Cmd(ADC1, ENABLE);
 	ADC_RegularChannelConfig(ADC1, ADC_Channel_13, 1, ADC_SampleTime_84Cycles);
 
+	// Set and reset traffic bits
+	GPIO_SetBits(GPIOC, shift_reset);
+	GPIO_ResetBits(GPIOC, shift_reset);
+	GPIO_SetBits(GPIOC, shift_reset);
+
 }
 
 /*-----------------------------------------------------------*/
@@ -249,24 +254,100 @@ int read_potentiometer() {
 
 /*-----------------------------------------------------------*/
 
+void add_car_and_shift() {
+	GPIO_SetBits(GPIOC, shift_reset);
+	GPIO_SetBits(GPIOC, shift_data);
+
+	// Reset and set shift clock
+	GPIO_ResetBits(GPIOC, shift_clock);
+	GPIO_SetBits(GPIOC, shift_clock);
+}
+
+
+void no_car_and_shift() {
+	GPIO_SetBits(GPIOC, shift_reset);
+	GPIO_ResetBits(GPIOC, shift_data);
+
+	// Reset and set shift clock
+	GPIO_ResetBits(GPIOC, shift_clock);
+	GPIO_SetBits(GPIOC, shift_clock);
+}
+
+/*-----------------------------------------------------------*/
+
+static void TrafficFlowAdjustmentTask(void *pvParameters) {
+	int flow = BASE_FLOW;
+	// Infinite while loop to continuously read potentiometer value
+	// Ten flow stages to represent the different steps from 0-100 in increments of 10 of the potentiometer
+//	while(1) {
+//		if(read_potentiometer() <= ) {
+//			flow = 0;
+//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
+//			flow = 1;
+//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
+//			flow = 2;
+//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
+//			flow = 3;
+//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
+//			flow = 4;
+//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
+//			flow = 5;
+//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
+//			flow = 6;
+//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
+//			flow = 7;
+//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
+//			flow = 8;
+//		} else if (read_potentiometer() > )
+//			flow = 9;
+//		}
+//
+//		// Send flow value to flowQueue (wait 1000 ticks)
+//		boolean queueStatus = xQueueSend(flowQueue, &flow, 1000);
+//		// Check if queueStatus was successful
+//		if(!queueStatus) printf("An error occurred sending the flow value to queue")
+//		// Delay the next task by 1000 ticks
+//		vTaskDelay(1000);
+//
+//	}
+}
+
+static void TrafficGeneratorTask(void *pvParameters) {
+
+}
+
+static void TrafficLightStateTask(void *pvParameters) {
+
+}
+
+static void SystemDisplayTask(void *pvParameters) {
+
+}
+
+/*-----------------------------------------------------------*/
 
 int main(void)
 {
 
+	// This function is responsible for initializing the GPIO and ADC
 	hardwareInit();
 
-	/* Create the queue used by the queue send and queue receive tasks.
-	http://www.freertos.org/a00116.html */
-	xQueue_handle = xQueueCreate( 	mainQUEUE_LENGTH,		/* The number of items the queue can hold. */
-							sizeof( uint16_t ) );	/* The size of each item the queue holds. */
+	// Create the queues for the flow of traffic and which lights are on
+	flowQueue = xQueueCreate(mainQUEUE_LENGTH, sizeof(int));
+	nextCarQueue = xQueueCreate(mainQUEUE_LENGTH, sizeof(int));
+	lightsQueue = xQueueCreate(mainQUEUE_LENGTH, sizeof(int));
+	// Register Queues
+	vQueueAddToRegistry(flowQueue, "TrafficFlowQueue");
+	vQueueAddToRegistry(nextCarQueue, "FutureCarQueue");
+	vQueueAddToRegistry(lightsQueue, "TrafficLightQueue");
+	// Create the tasks
+	xTaskCreate(TrafficFlowAdjustmentTask, "TrafficFlowTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+	xTaskCreate(TrafficGeneratorTask, "TrafficGeneratorTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+	xTaskCreate(TrafficLightStateTask, "TrafficLightTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+	xTaskCreate(SystemDisplayTask, "SystemDisplayTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-	/* Add to the registry, for the benefit of kernel aware debugging. */
-	vQueueAddToRegistry( xQueue_handle, "MainQueue" );
-
-	xTaskCreate( Manager_Task, "Manager", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
-	xTaskCreate( Red_LED_Controller_Task, "Red_LED", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-	xTaskCreate( Green_LED_Controller_Task, "Green_LED", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-	xTaskCreate( Amber_LED_Controller_Task, "Amber_LED", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+	// Initialize timer used to determine how long lights stay on
+	//trafficTimer = xTimerCreate("TrafficTimer", pdMS_TO_TICKS(1000), pdFALSE, (void *)0, )
 
 	/* Start the tasks and timer running. */
 	vTaskStartScheduler();
@@ -274,31 +355,28 @@ int main(void)
 	return 0;
 }
 
-
 /*-----------------------------------------------------------*/
 
 static void Manager_Task( void *pvParameters )
 {
-	uint16_t tx_data = amber;
+	uint16_t tx_data = 0;
 
 	while(1)
 	{
 
-		printf("pent output %d \n", read_potentiometer());
 
-//		if(tx_data == amber) {
-//			GPIO_SetBits(GPIOC, traffic_light_yellow);
-//			printf("\n\n\n pent output %f \n\n\n", read_potentiometer());
-//		}
-//		if(tx_data == green) {
-//			GPIO_SetBits(GPIOC, traffic_light_green);
-//			printf("\n\n\n pent output %f \n\n\n", read_potentiometer());
-//		}
-//		if(tx_data == red) {
-//			GPIO_SetBits(GPIOC, traffic_light_red);
-//			printf("\n\n\n pent output %f \n\n\n", read_potentiometer());
-//		}
+		printf("pent output %d \n", read_potentiometer());
 //
+//		if(tx_data == 0) {
+//
+//			GPIO_SetBits(GPIOC, traffic_light_yellow);
+//		}
+//		if(tx_data == 1) {
+//			GPIO_SetBits(GPIOC, traffic_light_green);
+//		}
+//		if(tx_data == 2) {
+//			GPIO_SetBits(GPIOC, traffic_light_red);
+//		}
 //
 //		if( xQueueSend(xQueue_handle,&tx_data,1000))
 //		{
@@ -314,6 +392,7 @@ static void Manager_Task( void *pvParameters )
 	}
 }
 
+/*-----------------------------------------------------------*/
 
 static void Green_LED_Controller_Task( void *pvParameters )
 {
@@ -367,6 +446,8 @@ static void Red_LED_Controller_Task( void *pvParameters )
 		}
 	}
 }
+
+/*-----------------------------------------------------------*/
 
 static void Amber_LED_Controller_Task( void *pvParameters )
 {
