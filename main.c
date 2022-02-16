@@ -279,37 +279,37 @@ static void TrafficFlowAdjustmentTask(void *pvParameters) {
 	int flow = BASE_FLOW;
 	// Infinite while loop to continuously read potentiometer value
 	// Ten flow stages to represent the different steps from 0-100 in increments of 10 of the potentiometer
-//	while(1) {
-//		if(read_potentiometer() <= ) {
-//			flow = 0;
-//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
-//			flow = 1;
-//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
-//			flow = 2;
-//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
-//			flow = 3;
-//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
-//			flow = 4;
-//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
-//			flow = 5;
-//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
-//			flow = 6;
-//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
-//			flow = 7;
-//		} else if (read_potentiometer() > && read_potentiometer() <= ) {
-//			flow = 8;
-//		} else if (read_potentiometer() > )
-//			flow = 9;
-//		}
-//
-//		// Send flow value to flowQueue (wait 1000 ticks)
-//		boolean queueStatus = xQueueSend(flowQueue, &flow, 1000);
-//		// Check if queueStatus was successful
-//		if(!queueStatus) printf("An error occurred sending the flow value to queue")
-//		// Delay the next task by 1000 ticks
-//		vTaskDelay(1000);
-//
-//	}
+	while(1) {
+		if(read_potentiometer() <= 380 ) {
+			flow = 0;
+		} else if (read_potentiometer() > 380 && read_potentiometer() <= 785 ) {
+			flow = 1;
+		} else if (read_potentiometer() > 785 && read_potentiometer() <= 1195) {
+			flow = 2;
+		} else if (read_potentiometer() > 1195 && read_potentiometer() <= 1605) {
+			flow = 3;
+		} else if (read_potentiometer() > 1605 && read_potentiometer() <= 2015) {
+			flow = 4;
+		} else if (read_potentiometer() > 2015 && read_potentiometer() <= 2425){
+			flow = 5;
+		} else if (read_potentiometer() > 2425 && read_potentiometer() <= 2825) {
+			flow = 6;
+		} else if (read_potentiometer() > 2825 && read_potentiometer() <= 3245) {
+			flow = 7;
+		} else if (read_potentiometer() > 3245 && read_potentiometer() <= 3645 ) {
+			flow = 8;
+		} else if (read_potentiometer() > 3975)
+			flow = 9;
+		}
+
+		// Send flow value to flowQueue (wait 1000 ticks)
+		boolean queueStatus = xQueueSend(flowQueue, &flow, 1000);
+		// Check if queueStatus was successful
+		if(!queueStatus) printf("An error occurred sending the flow value to queue")
+		// Delay the next task by 1000 ticks
+		vTaskDelay(1000);
+
+	}
 }
 
 static void TrafficGeneratorTask(void *pvParameters) {
