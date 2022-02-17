@@ -279,41 +279,68 @@ static void TrafficFlowAdjustmentTask(void *pvParameters) {
 	int flow = BASE_FLOW;
 	// Infinite while loop to continuously read potentiometer value
 	// Ten flow stages to represent the different steps from 0-100 in increments of 10 of the potentiometer
-	while(1) {
+	for(;;) {
 		if(read_potentiometer() <= 380 ) {
-			flow = 0;
+			flow = 17; //17%
 		} else if (read_potentiometer() > 380 && read_potentiometer() <= 785 ) {
-			flow = 1;
+			flow = 26; //26%
 		} else if (read_potentiometer() > 785 && read_potentiometer() <= 1195) {
-			flow = 2;
+			flow = 35; //35%
 		} else if (read_potentiometer() > 1195 && read_potentiometer() <= 1605) {
-			flow = 3;
+			flow = 44; //44%
 		} else if (read_potentiometer() > 1605 && read_potentiometer() <= 2015) {
-			flow = 4;
+			flow = 53; //53%
 		} else if (read_potentiometer() > 2015 && read_potentiometer() <= 2425){
-			flow = 5;
+			flow = 62; //62%
 		} else if (read_potentiometer() > 2425 && read_potentiometer() <= 2825) {
-			flow = 6;
+			flow = 71; //71%
 		} else if (read_potentiometer() > 2825 && read_potentiometer() <= 3245) {
-			flow = 7;
+			flow = 80; //80%
 		} else if (read_potentiometer() > 3245 && read_potentiometer() <= 3645 ) {
-			flow = 8;
-		} else if (read_potentiometer() > 3975)
-			flow = 9;
+			flow = 90; //90%
+		} else if (read_potentiometer() > 3975){
+			flow = 100; //100%
 		}
 
 		// Send flow value to flowQueue (wait 1000 ticks)
-		boolean queueStatus = xQueueSend(flowQueue, &flow, 1000);
+		if(!xQueueSend(flowQueue, &flow, 1000)) printf("An error occurred sending the flow value to queue");
 		// Check if queueStatus was successful
-		if(!queueStatus) printf("An error occurred sending the flow value to queue")
 		// Delay the next task by 1000 ticks
 		vTaskDelay(1000);
 
+		}
 	}
-}
 
 static void TrafficGeneratorTask(void *pvParameters) {
+	time_t t;
+	srand((unsigned) time(&t));
+	int flow;
+	int car = 0;
+	for(;;){
+		if(xQueueReceive(flowQueue, &flow, 1000)){
+			printf("received %d from queue\n", flow);
 
+			// generate random number less than 10
+			int random_value = rand() % 100;
+
+			if(random_value < flow){
+				car = 1;
+				printf("random_value = %d car was sent\n", random_value);
+
+			}else{
+				car = 0;
+				printf("random_value = %d car was not sent\n", random_value);
+			}
+
+			if(!xQueueSend(nextCarQueue, &car, 1000)){
+				printf("error sending car");
+			}
+		}else{
+			printf("error receiving flow");
+		}
+
+		vTaskDelay(1000);
+	}
 }
 
 static void TrafficLightStateTask(void *pvParameters) {
@@ -321,6 +348,21 @@ static void TrafficLightStateTask(void *pvParameters) {
 }
 
 static void SystemDisplayTask(void *pvParameters) {
+
+	while(1){
+		int car;
+		if(xQueueReceive(nextCarQueue, &car, 1000)){
+			if(car == 1){
+				add_car_and_shift();
+			}else{
+				no_car_and_shift();
+			}
+		}else{
+			printf("jabroni");
+		}
+
+
+	}
 
 }
 
@@ -357,122 +399,6 @@ int main(void)
 
 /*-----------------------------------------------------------*/
 
-static void Manager_Task( void *pvParameters )
-{
-	uint16_t tx_data = 0;
-
-	while(1)
-	{
-
-
-		printf("pent output %d \n", read_potentiometer());
-//
-//		if(tx_data == 0) {
-//
-//			GPIO_SetBits(GPIOC, traffic_light_yellow);
-//		}
-//		if(tx_data == 1) {
-//			GPIO_SetBits(GPIOC, traffic_light_green);
-//		}
-//		if(tx_data == 2) {
-//			GPIO_SetBits(GPIOC, traffic_light_red);
-//		}
-//
-//		if( xQueueSend(xQueue_handle,&tx_data,1000))
-//		{
-//			printf("Manager: %u ON!\n", tx_data);
-//			if(++tx_data == 3)
-//				tx_data = 0;
-//			vTaskDelay(1000);
-//		}
-//		else
-//		{
-//			printf("Manager Failed!\n");
-//		}
-	}
-}
-
-/*-----------------------------------------------------------*/
-
-static void Green_LED_Controller_Task( void *pvParameters )
-{
-	uint16_t rx_data;
-	while(1)
-	{
-		if(xQueueReceive(xQueue_handle, &rx_data, 500))
-		{
-			if(rx_data == green)
-			{
-				vTaskDelay(250);
-				GPIO_ResetBits(GPIOC, traffic_light_green);
-				printf("Green Off.\n");
-
-			}
-			else
-			{
-				if( xQueueSend(xQueue_handle,&rx_data,1000))
-					{
-						printf("GreenTask GRP (%u).\n", rx_data); // Got wrong Package
-						vTaskDelay(500);
-					}
-			}
-		}
-	}
-}
-
-/*-----------------------------------------------------------*/
-
-static void Red_LED_Controller_Task( void *pvParameters )
-{
-	uint16_t rx_data;
-	while(1)
-	{
-		if(xQueueReceive(xQueue_handle, &rx_data, 500))
-		{
-			if(rx_data == red)
-			{
-				vTaskDelay(250);
-				GPIO_ResetBits(GPIOC, traffic_light_red);
-				printf("Red off.\n");
-			}
-			else
-			{
-				if( xQueueSend(xQueue_handle,&rx_data,1000))
-					{
-						printf("RedTask GRP (%u).\n", rx_data); // Got wrong Package
-						vTaskDelay(500);
-					}
-			}
-		}
-	}
-}
-
-/*-----------------------------------------------------------*/
-
-static void Amber_LED_Controller_Task( void *pvParameters )
-{
-	uint16_t rx_data;
-	while(1)
-	{
-		if(xQueueReceive(xQueue_handle, &rx_data, 500))
-		{
-			if(rx_data == amber)
-			{
-				vTaskDelay(250);
-				GPIO_ResetBits(GPIOC, traffic_light_yellow);
-				printf("Amber Off.\n");
-			}
-			else
-			{
-				if( xQueueSend(xQueue_handle,&rx_data,1000))
-					{
-						printf("AmberTask GRP (%u).\n", rx_data); // Got wrong Package
-						vTaskDelay(500);
-					}
-			}
-		}
-	}
-}
 
 
 /*-----------------------------------------------------------*/
