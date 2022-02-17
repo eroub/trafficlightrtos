@@ -135,6 +135,9 @@ functionality.
 */
 
 /* Standard includes. */
+// stdlib.h needed for rand, time.h needed for time
+#include <time.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
 #include "stm32f4_discovery.h"
@@ -158,13 +161,6 @@ functionality.
 #define shift_reset GPIO_Pin_8
 #define shift_clock GPIO_Pin_7
 #define shift_data GPIO_Pin_6
-
-// Prototype functions
-static void Manager_Task( void *pvParameters );
-static void Green_LED_Controller_Task( void *pvParameters );
-static void Red_LED_Controller_Task( void *pvParameters );
-static void Amber_LED_Controller_Task( void *pvParameters );
-
 // Global variables for queues and timer
 TimerHandle_t trafficTimer;
 xQueueHandle flowQueue = 0;
@@ -172,7 +168,9 @@ xQueueHandle nextCarQueue = 0;
 xQueueHandle lightsQueue = 0;
 
 // Base flow to send if no potentiometer reading
-#define BASE_FLOW 0
+#define BASE_FLOW 17
+// Num positions defines the number of possible cars that can be on the board
+#define NUM_POSITIONS 19
 
 void hardwareInit() {
 
@@ -279,7 +277,7 @@ static void TrafficFlowAdjustmentTask(void *pvParameters) {
 	int flow = BASE_FLOW;
 	// Infinite while loop to continuously read potentiometer value
 	// Ten flow stages to represent the different steps from 0-100 in increments of 10 of the potentiometer
-	for(;;) {
+	while(1) {
 		if(read_potentiometer() <= 380 ) {
 			flow = 17; //17%
 		} else if (read_potentiometer() > 380 && read_potentiometer() <= 785 ) {
@@ -303,7 +301,7 @@ static void TrafficFlowAdjustmentTask(void *pvParameters) {
 		}
 
 		// Send flow value to flowQueue (wait 1000 ticks)
-		if(!xQueueSend(flowQueue, &flow, 1000)) printf("An error occurred sending the flow value to queue");
+		if(!xQueueSend(flowQueue, &flow, 150)) printf("An error occurred sending the flow value to queue");
 		// Check if queueStatus was successful
 		// Delay the next task by 1000 ticks
 		vTaskDelay(1000);
@@ -312,30 +310,33 @@ static void TrafficFlowAdjustmentTask(void *pvParameters) {
 	}
 
 static void TrafficGeneratorTask(void *pvParameters) {
+
+	int flow;
+	// If car is one then display a car, else display nothing
+	int car = 0;
+
+	// Time t and srand needed for randomness
 	time_t t;
 	srand((unsigned) time(&t));
-	int flow;
-	int car = 0;
-	for(;;){
-		if(xQueueReceive(flowQueue, &flow, 1000)){
+
+	while(1){
+		if(xQueueReceive(flowQueue, &flow, 150)){
 			printf("received %d from queue\n", flow);
 
-			// generate random number less than 10
+			// generate random number less than 100
 			int random_value = rand() % 100;
 
 			if(random_value < flow){
 				car = 1;
 				printf("random_value = %d car was sent\n", random_value);
-
-			}else{
+			} else {
 				car = 0;
 				printf("random_value = %d car was not sent\n", random_value);
 			}
 
-			if(!xQueueSend(nextCarQueue, &car, 1000)){
-				printf("error sending car");
-			}
-		}else{
+			if(!xQueueSend(nextCarQueue, &car, 150)) printf("error sending car");
+
+		} else {
 			printf("error receiving flow");
 		}
 
@@ -349,14 +350,16 @@ static void TrafficLightStateTask(void *pvParameters) {
 
 static void SystemDisplayTask(void *pvParameters) {
 
+	int car;
+
 	while(1){
-		int car;
-		if(xQueueReceive(nextCarQueue, &car, 1000)){
-			if(car == 1){
+		if(xQueueReceive(nextCarQueue, &car, 150)){
+			if(car == 1) {
 				add_car_and_shift();
-			}else{
+			} else {
 				no_car_and_shift();
 			}
+
 		}else{
 			printf("jabroni");
 		}
@@ -396,10 +399,6 @@ int main(void)
 
 	return 0;
 }
-
-/*-----------------------------------------------------------*/
-
-
 
 /*-----------------------------------------------------------*/
 
