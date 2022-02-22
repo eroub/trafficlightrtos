@@ -161,11 +161,17 @@ functionality.
 #define shift_reset GPIO_Pin_8
 #define shift_clock GPIO_Pin_7
 #define shift_data GPIO_Pin_6
+
 // Global variables for queues and timer
 TimerHandle_t trafficTimer;
 xQueueHandle flowQueue = 0;
-xQueueHandle nextCarQueue = 0;
 xQueueHandle lightsQueue = 0;
+xQueueHandle nextCarQueue = 0;
+
+// Define light states
+#define GREEN 1
+#define YELLOW 2
+#define RED 3
 
 // Base flow to send if no potentiometer reading
 #define BASE_FLOW 17
@@ -252,6 +258,114 @@ int read_potentiometer() {
 
 /*-----------------------------------------------------------*/
 
+static void TrafficFlowAdjustmentTask(void *pvParameters) {
+	int flow = BASE_FLOW;
+	// Infinite while loop to continuously read potentiometer value
+	// Ten flow stages to represent the different steps from 0-100 in increments of 10 of the potentiometer
+	while(1) {
+		// These values represent % chance from 0%-100% of a car being spawned
+		if (read_potentiometer() <= 380 ) { flow = 17; }
+	    else if (read_potentiometer() > 380 && read_potentiometer() <= 785) { flow = 26; }
+	    else if (read_potentiometer() > 785 && read_potentiometer() <= 1195) { flow = 35; }
+	    else if (read_potentiometer() > 1195 && read_potentiometer() <= 1605) { flow = 44; }
+		else if (read_potentiometer() > 1605 && read_potentiometer() <= 2015) { flow = 53; }
+		else if (read_potentiometer() > 2015 && read_potentiometer() <= 2425) { flow = 62; }
+		else if (read_potentiometer() > 2425 && read_potentiometer() <= 2825) { flow = 71; }
+		else if (read_potentiometer() > 2825 && read_potentiometer() <= 3245) { flow = 80; }
+		else if (read_potentiometer() > 3245 && read_potentiometer() <= 3645) { flow = 90; }
+		else if (read_potentiometer() > 3975){ flow = 100; }
+		// Send flow value to flowQueue (wait 1000 ticks)
+		if(!xQueueSend(flowQueue, &flow, 150)) printf("An error occurred sending the flow value to queue");
+
+		// Delay the next task by 1000 ticks
+		vTaskDelay(1000);
+		}
+	}
+
+static void TrafficGeneratorTask(void *pvParameters) {
+	int flowVal;
+	// If car is one then display a car, else display nothing
+	int car = 0;
+	// Time t and srand needed for randomness
+	time_t t;
+	srand((unsigned) time(&t));
+
+	while(1) {
+		// Get flow value generated from TrafficFlowAdjustmentTask
+		if(xQueueReceive(flowQueue, &flowVal, 150)) {
+			// Generate random number less than 100
+			int random_value = rand() % 100;
+			// Using random number determine if a car is to be sent or not
+			if(random_value < flowVal){
+				car = 1;
+			} else {
+				car = 0;
+			}
+			// Send value of car (0 if no car) to queue
+			if(!xQueueSend(nextCarQueue, &car, 150)) printf("error sending car");
+
+		}
+		// Delay the next task by 1000 ticks
+		vTaskDelay(1000);
+	}
+}
+
+/*-----------------------------------------------------------*/
+
+int determineGreenLight() {
+	// Lab spec defined green light length to be proportional to flow
+	// At max it should be ~ twice as long as when at min
+	int flowVal;
+	int time = 0;
+	if(xQueuePeek(flowQueue, &flowVal, 150)) {
+		// Time here represents ticks
+		if (flowVal == 17) { time = 3000; }
+		else if (flowVal == 35) { time = 3375; }
+		else if (flowVal == 44) { time = 3750; }
+		else if (flowVal == 53) { time = 4125; }
+		else if (flowVal == 62) { time = 4500; }
+		else if (flowVal == 71) { time = 4875; }
+		else if (flowVal == 80) { time = 5250; }
+		else if (flowVal == 90) { time = 5625; }
+		else if (flowVal == 100) { time = 6000; }
+	}
+	return time;
+}
+
+static void TrafficLightStateTask(void *pvParameters) {
+	int lightState;
+	while(1){
+		// First determine how long the green light is to stay on from the flowVal
+		int greenLightLength = determineGreenLight();
+		// After length of green light is determined check what state the light is in currently
+		if(xQueuePeek(lightsQueue, &lightState, 150)) {
+			// If light is currently green set timer to switch it to yellow
+			if(lightState == GREEN) {
+				xTimerStart(trafficTimer, pdMS_TO_TICKS(1000));
+				// Delay it by a constant
+				vTaskDelay(1000);
+			// If light state is currently yellow set timer to switch it to red
+			} else if (lightState == YELLOW) {
+				xTimerStart(trafficTimer, pdMS_TO_TICKS(9000)-pdMS_TO_TICKS(greenLightLength));
+				// For red light spec defines it to be inversely proportional to flow
+				// So for delay of red light set constant then subtract by whatever greenLightLength is
+				vTaskDelay(1000);
+				// vTaskDelay(10000-pdMS_TO_TICKS(greenLightLength));
+			// If light state is currently red set timer to switch it to green
+			} else if (lightState == RED) {
+				xTimerStart(trafficTimer, pdMS_TO_TICKS(greenLightLength));
+				// For green light simply delay by the ticks of greenLightLength
+				vTaskDelay(1000);
+				// vTaskDelay(pdMS_TO_TICKS(greenLightLength));
+			}
+		}
+		// Since each light state in itself delys the next task we do not need another here at the end of while loop
+		// vTaskDelay(1000);
+	}
+}
+
+/*-----------------------------------------------------------*/
+
 void add_car_and_shift() {
 	GPIO_SetBits(GPIOC, shift_reset);
 	GPIO_SetBits(GPIOC, shift_data);
@@ -271,102 +385,92 @@ void no_car_and_shift() {
 	GPIO_SetBits(GPIOC, shift_clock);
 }
 
-/*-----------------------------------------------------------*/
-
-static void TrafficFlowAdjustmentTask(void *pvParameters) {
-	int flow = BASE_FLOW;
-	// Infinite while loop to continuously read potentiometer value
-	// Ten flow stages to represent the different steps from 0-100 in increments of 10 of the potentiometer
-	while(1) {
-		if(read_potentiometer() <= 380 ) {
-			flow = 17; //17%
-		} else if (read_potentiometer() > 380 && read_potentiometer() <= 785 ) {
-			flow = 26; //26%
-		} else if (read_potentiometer() > 785 && read_potentiometer() <= 1195) {
-			flow = 35; //35%
-		} else if (read_potentiometer() > 1195 && read_potentiometer() <= 1605) {
-			flow = 44; //44%
-		} else if (read_potentiometer() > 1605 && read_potentiometer() <= 2015) {
-			flow = 53; //53%
-		} else if (read_potentiometer() > 2015 && read_potentiometer() <= 2425){
-			flow = 62; //62%
-		} else if (read_potentiometer() > 2425 && read_potentiometer() <= 2825) {
-			flow = 71; //71%
-		} else if (read_potentiometer() > 2825 && read_potentiometer() <= 3245) {
-			flow = 80; //80%
-		} else if (read_potentiometer() > 3245 && read_potentiometer() <= 3645 ) {
-			flow = 90; //90%
-		} else if (read_potentiometer() > 3975){
-			flow = 100; //100%
+static void SystemDisplayTask(void *pvParameters) {
+	int lightState, carState;
+	// This array exists to keep track of the position of all the cars for the 19 possible positions, need to init to 0
+	int car_arr[NUM_POSITIONS] = {0};
+	while(1){
+		// Get values of lightState and carState
+		if(xQueuePeek(lightsQueue, &lightState, 150) && xQueueReceive(nextCarQueue, &carState, 150)) {
+			if(lightState == GREEN) {
+				// Turn off red light and turn on green light
+				GPIO_ResetBits(INPUT_PORT, traffic_light_red);
+				GPIO_SetBits(INPUT_PORT, traffic_light_green);
+				// Shift all cars in all positions starting from end of array
+				for (int i=NUM_POSITIONS-1; i>0; i--) {
+					car_arr[i] = car_arr[i-1];
+					car_arr[i-1] = 0;
+				}
+				// Set the first car to that of the carState
+				car_arr[0] = carState;
+			} else {
+				// For all intents and purposes a yellow acts like a red, in that cars will also stop at a yellow
+				if(lightState == YELLOW) {
+					// Turn off green light and turn on yellow light
+					GPIO_ResetBits(INPUT_PORT, traffic_light_green);
+					GPIO_SetBits(INPUT_PORT, traffic_light_yellow);
+				}
+				if(lightState == RED) {
+					// Turn off yellow light and turn on red light
+					GPIO_ResetBits(INPUT_PORT, traffic_light_yellow);
+					GPIO_SetBits(INPUT_PORT, traffic_light_red);
+				}
+				// Shift cars before red/yellow light until they hit another car or light
+				// Otherwise shift all cars past the red/yellow light
+				// For all cars past the 8th position shift them
+				for(int i= NUM_POSITIONS-1; i>8; i--) {
+					car_arr[i] = car_arr[i-1];
+					car_arr[i-1] = 0;
+				}
+				// Set the value of the 8th position to be 0 (as it was shifted in the above for loop) but do not change the value of the car before the stop line
+				car_arr[8] = 0;
+				// Next deal with cars in front of the light
+				for(int i=7; i>0; i--) {
+					// If the position is empty, shift the position behind it
+					if (car_arr[i] == 0) {
+						car_arr[i] = car_arr[i-1];
+						car_arr[i-1] = 0;
+					}
+				}
+				// Lastly if the first position does not hold a car insert the value of carState
+				if (!car_arr[0]) car_arr[0] = carState;
+			}
+			// Finally iterate through car array and set bits according to the value of the car in each position
+			for (int i=NUM_POSITIONS-1; i>-1; i--) {
+				if(car_arr[i]) {
+					add_car_and_shift();
+				} else {
+					no_car_and_shift();
+				}
+			}
 		}
-
-		// Send flow value to flowQueue (wait 1000 ticks)
-		if(!xQueueSend(flowQueue, &flow, 150)) printf("An error occurred sending the flow value to queue");
-		// Check if queueStatus was successful
 		// Delay the next task by 1000 ticks
 		vTaskDelay(1000);
-
-		}
-	}
-
-static void TrafficGeneratorTask(void *pvParameters) {
-
-	int flow;
-	// If car is one then display a car, else display nothing
-	int car = 0;
-
-	// Time t and srand needed for randomness
-	time_t t;
-	srand((unsigned) time(&t));
-
-	while(1){
-		if(xQueueReceive(flowQueue, &flow, 150)){
-			printf("received %d from queue\n", flow);
-
-			// generate random number less than 100
-			int random_value = rand() % 100;
-
-			if(random_value < flow){
-				car = 1;
-				printf("random_value = %d car was sent\n", random_value);
-			} else {
-				car = 0;
-				printf("random_value = %d car was not sent\n", random_value);
-			}
-
-			if(!xQueueSend(nextCarQueue, &car, 150)) printf("error sending car");
-
-		} else {
-			printf("error receiving flow");
-		}
-
-		vTaskDelay(1000);
 	}
 }
 
-static void TrafficLightStateTask(void *pvParameters) {
+/*-----------------------------------------------------------*/
 
-}
-
-static void SystemDisplayTask(void *pvParameters) {
-
-	int car;
-
-	while(1){
-		if(xQueueReceive(nextCarQueue, &car, 150)){
-			if(car == 1) {
-				add_car_and_shift();
-			} else {
-				no_car_and_shift();
-			}
-
-		}else{
-			printf("jabroni");
+void TimerCallback(TimerHandle_t t) {
+	int lightState, nextLightState;
+	if(xQueueReceive(lightsQueue, &lightState, 150)) {
+		// Handle case when current lightState is green
+		if(lightState == GREEN) {
+			// When green pass yellow as nextLightState
+			nextLightState = YELLOW;
+			if(!xQueueSend(lightsQueue, &nextLightState, 150)) printf("error sending light");
+		// Handle case when current lightState is yellow
+		} else if (lightState == YELLOW) {
+			// When yellow pass red as nextLightState
+			nextLightState = RED;
+			if(!xQueueSend(lightsQueue, &nextLightState, 150)) printf("error sending light");
+		// Handle case when current lightState is red
+		} else if (lightState == RED) {
+			// When red pass green as nextLightState
+			nextLightState = GREEN;
+			if(!xQueueSend(lightsQueue, &nextLightState, 150)) printf("error sending light");
 		}
-
-
 	}
-
 }
 
 /*-----------------------------------------------------------*/
@@ -392,7 +496,11 @@ int main(void)
 	xTaskCreate(SystemDisplayTask, "SystemDisplayTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
 	// Initialize timer used to determine how long lights stay on
-	//trafficTimer = xTimerCreate("TrafficTimer", pdMS_TO_TICKS(1000), pdFALSE, (void *)0, )
+	trafficTimer = xTimerCreate("TrafficTimer", 1000, pdFALSE, (void *)0, TimerCallback);
+
+	// Send GREEN light to queue to initialize light
+	int initLightState = GREEN;
+	xQueueSend(lightsQueue, &initLightState, 150);
 
 	/* Start the tasks and timer running. */
 	vTaskStartScheduler();
