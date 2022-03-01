@@ -280,7 +280,7 @@ static void TrafficFlowAdjustmentTask(void *pvParameters) {
 		// Delay the next task by 1000 ticks
 		vTaskDelay(1000);
 		}
-	}
+}
 
 static void TrafficGeneratorTask(void *pvParameters) {
 	int flowVal;
@@ -349,14 +349,14 @@ static void TrafficLightStateTask(void *pvParameters) {
 				xTimerStart(trafficTimer, pdMS_TO_TICKS(9000)-pdMS_TO_TICKS(greenLightLength));
 				// For red light spec defines it to be inversely proportional to flow
 				// So for delay of red light set constant then subtract by whatever greenLightLength is
-				vTaskDelay(1000);
-				// vTaskDelay(10000-pdMS_TO_TICKS(greenLightLength));
+//				vTaskDelay(1000);
+				 vTaskDelay(10000-pdMS_TO_TICKS(greenLightLength));
 			// If light state is currently red set timer to switch it to green
 			} else if (lightState == RED) {
 				xTimerStart(trafficTimer, pdMS_TO_TICKS(greenLightLength));
 				// For green light simply delay by the ticks of greenLightLength
-				vTaskDelay(1000);
-				// vTaskDelay(pdMS_TO_TICKS(greenLightLength));
+//				vTaskDelay(1000);
+				vTaskDelay(pdMS_TO_TICKS(greenLightLength));
 			}
 		}
 		// Since each light state in itself delys the next task we do not need another here at the end of while loop
@@ -491,9 +491,9 @@ int main(void)
 	vQueueAddToRegistry(lightsQueue, "TrafficLightQueue");
 	// Create the tasks
 	xTaskCreate(TrafficFlowAdjustmentTask, "TrafficFlowTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-	xTaskCreate(TrafficGeneratorTask, "TrafficGeneratorTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-	xTaskCreate(TrafficLightStateTask, "TrafficLightTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-	xTaskCreate(SystemDisplayTask, "SystemDisplayTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+	xTaskCreate(TrafficGeneratorTask, "TrafficGeneratorTask", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+	xTaskCreate(TrafficLightStateTask, "TrafficLightTask", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
+	xTaskCreate(SystemDisplayTask, "SystemDisplayTask", configMINIMAL_STACK_SIZE, NULL, 4, NULL);
 
 	// Initialize timer used to determine how long lights stay on
 	trafficTimer = xTimerCreate("TrafficTimer", 1000, pdFALSE, (void *)0, TimerCallback);
