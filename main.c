@@ -265,15 +265,15 @@ static void TrafficFlowAdjustmentTask(void *pvParameters) {
 	while(1) {
 		// These values represent % chance from 0%-100% of a car being spawned
 		if (read_potentiometer() <= 380 ) { flow = 17; }
-	    else if (read_potentiometer() > 380 && read_potentiometer() <= 785) { flow = 26; }
-	    else if (read_potentiometer() > 785 && read_potentiometer() <= 1195) { flow = 35; }
-	    else if (read_potentiometer() > 1195 && read_potentiometer() <= 1605) { flow = 44; }
-		else if (read_potentiometer() > 1605 && read_potentiometer() <= 2015) { flow = 53; }
-		else if (read_potentiometer() > 2015 && read_potentiometer() <= 2425) { flow = 62; }
-		else if (read_potentiometer() > 2425 && read_potentiometer() <= 2825) { flow = 71; }
-		else if (read_potentiometer() > 2825 && read_potentiometer() <= 3245) { flow = 80; }
-		else if (read_potentiometer() > 3245 && read_potentiometer() <= 3645) { flow = 90; }
-		else if (read_potentiometer() > 3975){ flow = 100; }
+	    else if (read_potentiometer() > 380 && read_potentiometer() <= 785) { flow = 20; }
+	    else if (read_potentiometer() > 785 && read_potentiometer() <= 1195) { flow = 25; }
+	    else if (read_potentiometer() > 1195 && read_potentiometer() <= 1605) { flow = 35; }
+		else if (read_potentiometer() > 1605 && read_potentiometer() <= 2015) { flow = 40; }
+		else if (read_potentiometer() > 2015 && read_potentiometer() <= 2425) { flow = 50; }
+		else if (read_potentiometer() > 2425 && read_potentiometer() <= 2825) { flow = 60; }
+		else if (read_potentiometer() > 2825 && read_potentiometer() <= 3245) { flow = 70; }
+		else if (read_potentiometer() > 3245 && read_potentiometer() <= 3645) { flow = 80; }
+		else if (read_potentiometer() > 3975){ flow = 90; }
 		// Send flow value to flowQueue (wait 1000 ticks)
 		if(!xQueueSend(flowQueue, &flow, 150)) printf("An error occurred sending the flow value to queue");
 
@@ -316,18 +316,19 @@ int determineGreenLight() {
 	// Lab spec defined green light length to be proportional to flow
 	// At max it should be ~ twice as long as when at min
 	int flowVal;
-	int time = 0;
+	int time = 4500;
 	if(xQueuePeek(flowQueue, &flowVal, 150)) {
 		// Time here represents ticks
 		if (flowVal == 17) { time = 3000; }
-		else if (flowVal == 35) { time = 3375; }
-		else if (flowVal == 44) { time = 3750; }
-		else if (flowVal == 53) { time = 4125; }
-		else if (flowVal == 62) { time = 4500; }
-		else if (flowVal == 71) { time = 4875; }
-		else if (flowVal == 80) { time = 5250; }
-		else if (flowVal == 90) { time = 5625; }
-		else if (flowVal == 100) { time = 6000; }
+		else if (flowVal == 20) { time = 3333; }
+		else if (flowVal == 25) { time = 3666; }
+		else if (flowVal == 35) { time = 4000; }
+		else if (flowVal == 40) { time = 4333; }
+		else if (flowVal == 50) { time = 4666; }
+		else if (flowVal == 60) { time = 5000; }
+		else if (flowVal == 70) { time = 5333; }
+		else if (flowVal == 80) { time = 5666; }
+		else if (flowVal == 90) { time = 6000; }
 	}
 	return time;
 }
@@ -350,7 +351,7 @@ static void TrafficLightStateTask(void *pvParameters) {
 				// For red light spec defines it to be inversely proportional to flow
 				// So for delay of red light set constant then subtract by whatever greenLightLength is
 //				vTaskDelay(1000);
-				 vTaskDelay(10000-pdMS_TO_TICKS(greenLightLength));
+				 vTaskDelay(pdMS_TO_TICKS(9000)-pdMS_TO_TICKS(greenLightLength));
 			// If light state is currently red set timer to switch it to green
 			} else if (lightState == RED) {
 				xTimerStart(trafficTimer, pdMS_TO_TICKS(greenLightLength));
@@ -360,7 +361,7 @@ static void TrafficLightStateTask(void *pvParameters) {
 			}
 		}
 		// Since each light state in itself delys the next task we do not need another here at the end of while loop
-		// vTaskDelay(1000);
+		 vTaskDelay(1000);
 	}
 }
 
@@ -479,6 +480,7 @@ int main(void)
 {
 
 	// This function is responsible for initializing the GPIO and ADC
+
 	hardwareInit();
 
 	// Create the queues for the flow of traffic and which lights are on
@@ -558,4 +560,3 @@ volatile size_t xFreeStackSpace;
 		reduced accordingly. */
 	}
 }
-
