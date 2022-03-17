@@ -16,28 +16,29 @@
 /*-----------------------------------------------------------*/
 #define mainQUEUE_LENGTH 100
 
-enum task_type {PERIODIC,APERIODIC}; 
- 
+enum task_type {PERIODIC,APERIODIC};
+
 // Struct Inits
-struct dd_task { 
-	TaskHandle_t t_handle;  
-	task_type type; 
-	uint32_t task_id;  
-	uint32_t release_time;  
-	uint32_t absolute_deadline; 
-	uint32_t completion_time; 
+struct dd_task {
+	TaskHandle_t t_handle;
+	uint32_t type;
+	uint32_t task_id;
+	uint32_t release_time;
+	uint32_t execution_time;
+	uint32_t absolute_deadline;
+	uint32_t completion_time;
 };
 
-struct dd_task_list { 
-	dd_task task;    
-	struct dd_task_list *next_task; 
+struct dd_task_list {
+	struct dd_task task;
+	struct dd_task_list *next_task;
 };
 
 // DD Prototypes
-void create_dd_task(TaskHandle_t t_handle, task_type type, uint32_t task_id, uint32_t absolute_deadline); 
-void delete_dd_task(uint32_t task_id); 
+void create_dd_task(TaskHandle_t t_handle, uint32_t type, uint32_t task_id, uint32_t absolute_deadline);
+void delete_dd_task(uint32_t task_id);
 void get_active_dd_task_list(void);
-void get_complete_dd_task_list(void); 
+void get_complete_dd_task_list(void);
 void get_overdue_dd_task_list(void);
 
 // F Prototypes
@@ -45,6 +46,8 @@ void xDeadlineScheduler(void *pvParameters);
 void xUserTasks(void *pvParameters);
 void xDeadlineTaskGenerator(void *pvParameters);
 void xMonitorTask(void *pvParameters);
+
+xQueueHandle new_taskQueue = 0;
 
 /*-----------------------------------------------------------*/
 
@@ -85,6 +88,14 @@ int main(void)
 	xTaskCreate(xMonitorTask, "MonitorTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
 	return 0;
+}
+
+void release_dd_task(uint32_t type, uint32_t task_id, uint32_t absolute_deadline){
+	struct dd_task task;
+	
+	task.type = type;
+	task.task_id = task_id;
+	task.absolute_deadline = absolute_deadline;	
 }
 
 /*-----------------------------------------------------------*/
