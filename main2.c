@@ -69,24 +69,23 @@ int main(void) {
 	SystemInit();
 
 	// Create the tasks
-	xTaskCreate(xDeadlineScheduler, "DeadlineScheduler", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
-	xTaskCreate(xUserTasks, "UserTasks", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
-	xTaskCreate(xDeadlineTask1Generator, "DeadlineTask1Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
-	xTaskCreate(xDeadlineTask2Generator, "DeadlineTask2Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
-	xTaskCreate(xDeadlineTask3Generator, "DeadlineTask3Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
+	xTaskCreate(xDeadlineScheduler, "DeadlineScheduler", configMINIMAL_STACK_SIZE, NULL, 4, NULL);
+	xTaskCreate(xDeadlineTask1Generator, "DeadlineTask1Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 3, NULL);
+	xTaskCreate(xDeadlineTask2Generator, "DeadlineTask2Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 3, NULL);
+	xTaskCreate(xDeadlineTask3Generator, "DeadlineTask3Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 3, NULL);
 	// xTaskCreate(xMonitorTask, "MonitorTask", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
 
 	// Get size of struct
 	int structSize = sizeof(struct dd_task);
 
 	// Create message queue and message response queue
-	message_release_queue = xQueueCreate(5,structSize);
-	message_response_queue = xQueueCreate(5,structSize);
+	message_release_queue = xQueueCreate(4,structSize);
+	message_response_queue = xQueueCreate(4,sizeof(int));
 	vQueueAddToRegistry(message_release_queue, "ReleaseMessage");
 	vQueueAddToRegistry(message_response_queue, "ReponseMessage");
 
-	completed_message_queue = xQueueCreate(5,structSize);
-	completed_reply_queue = xQueueCreate(5,structSize);
+	completed_message_queue = xQueueCreate(4,sizeof(TaskHandle_t));
+	completed_reply_queue = xQueueCreate(4,sizeof(int));
 	vQueueAddToRegistry(completed_message_queue, "CompletedMessage");
 	vQueueAddToRegistry(completed_reply_queue, "CompletedResponse");
 
@@ -173,14 +172,14 @@ void xDeadlineTask3Generator(void *pvParameters) {
 /*-----------------------------------------------------------*/
 
 void complete_dd_task(TaskHandle_t t_handle) {
-
 	// Send message that task was completed
 	xQueueSend(completed_message_queue, &t_handle, 5);
 
 	// Wait for response
 	int response;
 	while(1) if (xQueueReceive(completed_reply_queue, &response, 5)) break;
-	vTaskDelete(t_handle);
+	vTaskDelete(NULL);
+	//vTaskDelete(t_handle);
 }
 
 /*-----------------------------------------------------------*/
@@ -188,13 +187,13 @@ void complete_dd_task(TaskHandle_t t_handle) {
 void release_dd_task(uint32_t type, uint32_t task_id, uint32_t execution_time, uint32_t absolute_deadline) {
 	// Create new task struct with given parameters
 	struct dd_task task;
+	//task.t_handle = NULL;
 	task.type = type;
 	task.task_id = task_id;
 	task.execution_time = execution_time;
 	task.absolute_deadline = absolute_deadline;
 
 	// Next send the struct via message queue
-	printf("Task released %d \n", absolute_deadline);
 	xQueueSend(message_release_queue, &task, 5);
 
 	// Lastly await response from xDeadlineScheduler
@@ -209,7 +208,6 @@ void xUserTasks(void *pvParameters) {
 	int executionTime = (int) pvParameters;
 	int startTime = (int) xTaskGetTickCount();
 	int endTime = startTime + executionTime;
-
 	// Wait until endTime has been passed
 	while(endTime > (int) xTaskGetTickCount());
 	// Send completed task to completed_queue
@@ -244,7 +242,7 @@ void xDeadlineScheduler(void *pvParameters) {
 			// Create copy of head of active_task_list
 			struct dd_task_list *active_head = active_task_list;
 			// Iterate through active_task_list and new user_task to list based on absolute_deadline
-			while(active_head != NULL) {
+			while(active_head->next_task != NULL) {
 				// Check absolute deadline of task in active list against new task
 				if(active_head->next_task->task.absolute_deadline > new_user_task->task.absolute_deadline) {
 					new_user_task->next_task = active_head->next_task;
@@ -256,6 +254,7 @@ void xDeadlineScheduler(void *pvParameters) {
 			new_user_task->next_task = active_head->next_task;
 			active_head->next_task = new_user_task;
 
+
 			// Send response to release_dd_task to allow it to continue
 			int response = 1;
 			xQueueSend(message_response_queue, &response, 5);
@@ -264,32 +263,72 @@ void xDeadlineScheduler(void *pvParameters) {
 		// Otherwise start the task at the head of the active_list
 		if(xQueuePeek(message_release_queue, &user_task, 50)) {
 			continue;
-		} else {
+		} else if (active_task_list->next_task != NULL) {
+			// Print list
+			// printLinkedList(active_task_list->next_task);
+
+
 			// Get head of list
 			struct dd_task task_to_run = active_task_list->next_task->task;
 			// Create new task
-			xTaskCreate(xUserTasks, "UserDefinedTask", configMINIMAL_STACK_SIZE,(void *) task_to_run.execution_time, 1, &(task_to_run.t_handle));
+			printf("* Task Created with ID:%d, Deadline:%d, Execution:%d\n", task_to_run.task_id, task_to_run.absolute_deadline, task_to_run.execution_time);
+			xTaskCreate(xUserTasks, "UserDefinedTask", configMINIMAL_STACK_SIZE,(void *) task_to_run.execution_time, 1, &task_to_run.t_handle);
 
-			// Wait for complete_dd_task to send message
-			struct dd_task completed_task;
-			while(1) if(xQueueReceive(completed_message_queue, &completed_task, 5)) break;
-			// Set completed time for task
-			completed_task.completion_time = (int) xTaskGetTickCount();
-			printf("Task completed " + completed_task.completion_time);
-
-			// Check if task is overdue or not
-			if(completed_task.completion_time > completed_task.absolute_deadline) {
-				// TASK WAS OVERDUE ADD TO OVERDUE LIST
-			} else {
-				// TASK WAS DONE ON TIME ADD TO COMPLETED LIST
+			// Wait to receive completed message
+			TaskHandle_t completed_task_handle;
+			while(1) if(xQueueReceive(completed_message_queue, &completed_task_handle, 5)) break;
+			// Set current_list variable to active_list_head
+			struct dd_task_list *finished_task = active_task_list;
+			// Find completed task in list of active tasks
+			int foundCompletedTask = 1;
+			while(finished_task->task.absolute_deadline != task_to_run.absolute_deadline && finished_task->task.execution_time != task_to_run.execution_time && finished_task->task.task_id != task_to_run.task_id) {
+				if (finished_task->next_task == NULL) {
+					printf("Error, could not find completed task\n");
+					foundCompletedTask = 0;
+					break;
+				} else {
+					finished_task = finished_task->next_task;
+				}
 			}
+			if(foundCompletedTask) {
+				// Send response to complete_dd_task
+				int response = 1;
+				xQueueSend(completed_reply_queue, &response, 5);
 
-			// Send response to complete_dd_task
-			int response = 1;
-			xQueueSend(completed_reply_queue, &response, 5);
+				// Set completion_time
+				finished_task->task.completion_time = (int) xTaskGetTickCount();
 
-			// Set head of list to next_task
-			active_task_list = active_task_list->next_task;
+				// Check if task is overdue or not
+				if(finished_task->task.completion_time > finished_task->task.absolute_deadline) {
+					// TASK WAS OVERDUE ADD TO OVERDUE LIST
+					printf("!! OVERDUE Completion with ID:%d, Deadline:%d, Execution:%d, Completion:%d\n", finished_task->task.task_id, finished_task->task.absolute_deadline, finished_task->task.execution_time, finished_task->task.completion_time);
+				} else {
+					// TASK WAS DONE ON TIME ADD TO COMPLETED LIST
+					printf("-- ONTIME Completion with ID:%d, Deadline:%d, Execution:%d, Completion:%d\n", finished_task->task.task_id, finished_task->task.absolute_deadline, finished_task->task.execution_time, finished_task->task.completion_time);
+				}
+
+				// Remove task from list
+				// Set prev, and curr variables from active_list
+				struct dd_task_list *curr = active_task_list;
+				struct dd_task_list *prev = active_task_list;
+				while(curr->task.task_id != finished_task->task.task_id) {
+					if(curr->next_task == NULL) {
+						printf("Error, completed task id not found in active task list\n");
+						return;
+					}
+					prev = curr;
+					curr = curr->next_task;
+				}
+				// After finished_task is equal to curr set prev to curr
+				if(curr->next_task == NULL) {
+					prev->next_task = NULL;
+				} else {
+					prev->next_task = curr->next_task;
+				}
+				// Finally free curr and finished_task
+				free(finished_task);
+				free(curr);
+			}
 		}
 
 
@@ -298,6 +337,18 @@ void xDeadlineScheduler(void *pvParameters) {
 	}
 
 
+}
+
+/*-----------------------------------------------------------*/
+
+void printLinkedList(struct dd_task_list *list) {
+	printf("Printing linked list -----\n");
+	struct dd_task_list *curr = list;
+	while ( curr != NULL) {
+		printf(" task_id:%d, execution_time:%d, absolute_deadline:%d\n", curr->task.task_id, curr->task.execution_time, curr->task.absolute_deadline);
+		curr = curr->next_task;
+	}
+	printf("--------------\n");
 }
 
 /*-----------------------------------------------------------*/
@@ -317,7 +368,7 @@ void vApplicationMallocFailedHook( void )
 	internally by FreeRTOS API functions that create tasks, queues, software 
 	timers, and semaphores.  The size of the FreeRTOS heap is set by the
 	configTOTAL_HEAP_SIZE configuration constant in FreeRTOSConfig.h. */
-	for( ;; );
+ 	for( ;; );
 }
 /*-----------------------------------------------------------*/
 
