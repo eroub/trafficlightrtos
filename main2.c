@@ -71,24 +71,24 @@ int main(void) {
 	// Create the tasks
 	xTaskCreate(xDeadlineScheduler, "DeadlineScheduler", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
 	xTaskCreate(xUserTasks, "UserTasks", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
-	xTaskCreate(xDeadlineTask1Generator, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
-	xTaskCreate(xDeadlineTask2Generator, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
-	xTaskCreate(xDeadlineTask3Generator, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
-	xTaskCreate(xMonitorTask, "MonitorTask", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+	xTaskCreate(xDeadlineTask1Generator, "DeadlineTask1Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
+	xTaskCreate(xDeadlineTask2Generator, "DeadlineTask2Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
+	xTaskCreate(xDeadlineTask3Generator, "DeadlineTask3Generator", configMINIMAL_STACK_SIZE, (void *) testBench, 4, NULL);
+	// xTaskCreate(xMonitorTask, "MonitorTask", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
 
 	// Get size of struct
 	int structSize = sizeof(struct dd_task);
 
 	// Create message queue and message response queue
-	message_release_queue = xQueueCreate(mainQUEUE_LENGTH,structSize);
-	message_response_queue = xQueueCreate(mainQUEUE_LENGTH,structSize);
+	message_release_queue = xQueueCreate(5,structSize);
+	message_response_queue = xQueueCreate(5,structSize);
 	vQueueAddToRegistry(message_release_queue, "ReleaseMessage");
 	vQueueAddToRegistry(message_response_queue, "ReponseMessage");
 
-	completed_message_queue = xQueueCreate(mainQUEUE_LENGTH,structSize);
-	completed_reply_queue = xQueueCreate(mainQUEUE_LENGTH,structSize);
-	vQueueAddToRegistry(completed_message_queue, "ReleaseMessage");
-	vQueueAddToRegistry(completed_reply_queue, "ReponseMessage");
+	completed_message_queue = xQueueCreate(5,structSize);
+	completed_reply_queue = xQueueCreate(5,structSize);
+	vQueueAddToRegistry(completed_message_queue, "CompletedMessage");
+	vQueueAddToRegistry(completed_reply_queue, "CompletedResponse");
 
 	/* Start Scheduler */
 	vTaskStartScheduler();
@@ -303,8 +303,7 @@ void xDeadlineScheduler(void *pvParameters) {
 /*-----------------------------------------------------------*/
 
 void xMonitorTask(void *pvParameters) {
-	// Delay the next task by 1000 ticks
-	vTaskDelay(1000);
+	while(1) {vTaskDelay(100);}
 }
 
 /*-----------------------------------------------------------*/
